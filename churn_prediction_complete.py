@@ -1,0 +1,772 @@
+# Churn Prediction System - Complete Enhanced Version
+# This notebook includes all required components for the internship project
+
+# ============================================================================
+# 1. IMPORTS AND SETUP
+# ============================================================================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import warnings
+warnings.filterwarnings('ignore')
+
+# ML Libraries
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    classification_report, confusion_matrix, ConfusionMatrixDisplay,
+    RocCurveDisplay, roc_auc_score, precision_recall_curve, auc,
+    accuracy_score, precision_score, recall_score, f1_score, roc_curve
+)
+import joblib
+
+# XGBoost
+try:
+    from xgboost import XGBClassifier
+    print("✓ XGBoost imported successfully")
+except ImportError:
+    print("⚠ XGBoost not installed. Installing...")
+    import subprocess
+    subprocess.check_call(["pip", "install", "xgboost", "--break-system-packages"])
+    from xgboost import XGBClassifier
+
+# Set style
+plt.style.use('seaborn-v0_8-darkgrid')
+sns.set_palette("husl")
+
+print("=" * 70)
+print("CHURN PREDICTION SYSTEM - COMPLETE ANALYSIS")
+print("=" * 70)
+
+# ============================================================================
+# 2. DATA LOADING AND INITIAL EXPLORATION
+# ============================================================================
+
+CSV_PATH = Path("Churn_Modelling.csv")
+df = pd.read_csv(CSV_PATH)
+
+print(f"\n📊 Dataset Shape: {df.shape}")
+print(f"📅 Total Customers: {df.shape[0]:,}")
+print(f"🔢 Total Features: {df.shape[1]}")
+print("\n" + "=" * 70)
+
+# ============================================================================
+# 3. COMPREHENSIVE DATA EXPLORATION
+# ============================================================================
+
+print("\n🔍 DATA TYPES:")
+print(df.dtypes)
+
+print("\n🔍 MISSING VALUES:")
+missing_pct = (df.isna().mean() * 100).sort_values(ascending=False)
+print(missing_pct[missing_pct > 0] if missing_pct.sum() > 0 else "✓ No missing values!")
+
+print("\n🔍 BASIC STATISTICS:")
+print(df.describe())
+
+# Target Variable Analysis
+TARGET = "Exited"
+print(f"\n🎯 TARGET VARIABLE DISTRIBUTION ({TARGET}):")
+churn_dist = df[TARGET].value_counts()
+churn_pct = df[TARGET].value_counts(normalize=True) * 100
+print(f"  Not Churned (0): {churn_dist[0]:,} ({churn_pct[0]:.2f}%)")
+print(f"  Churned (1): {churn_dist[1]:,} ({churn_pct[1]:.2f}%)")
+print(f"  Churn Rate: {churn_pct[1]:.2f}%")
+
+# ============================================================================
+# 4. ADVANCED EXPLORATORY DATA ANALYSIS (EDA)
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("📊 GENERATING VISUALIZATIONS...")
+print("=" * 70)
+
+# Create a figure for multiple subplots
+fig = plt.figure(figsize=(20, 15))
+
+# 4.1 Target Distribution
+plt.subplot(3, 4, 1)
+df[TARGET].value_counts().plot(kind='bar', color=['green', 'red'])
+plt.title('Churn Distribution', fontsize=12, fontweight='bold')
+plt.xlabel('Exited (0=No, 1=Yes)')
+plt.ylabel('Count')
+plt.xticks(rotation=0)
+
+# 4.2 Churn Rate by Geography
+plt.subplot(3, 4, 2)
+churn_by_geo = df.groupby('Geography')[TARGET].mean() * 100
+churn_by_geo.plot(kind='bar', color='coral')
+plt.title('Churn Rate by Geography', fontsize=12, fontweight='bold')
+plt.xlabel('Country')
+plt.ylabel('Churn Rate (%)')
+plt.xticks(rotation=45)
+
+# 4.3 Churn Rate by Gender
+plt.subplot(3, 4, 3)
+churn_by_gender = df.groupby('Gender')[TARGET].mean() * 100
+churn_by_gender.plot(kind='bar', color='skyblue')
+plt.title('Churn Rate by Gender', fontsize=12, fontweight='bold')
+plt.xlabel('Gender')
+plt.ylabel('Churn Rate (%)')
+plt.xticks(rotation=0)
+
+# 4.4 Age Distribution by Churn
+plt.subplot(3, 4, 4)
+df[df[TARGET]==0]['Age'].hist(alpha=0.5, label='Not Churned', bins=20, color='green')
+df[df[TARGET]==1]['Age'].hist(alpha=0.5, label='Churned', bins=20, color='red')
+plt.title('Age Distribution by Churn', fontsize=12, fontweight='bold')
+plt.xlabel('Age')
+plt.ylabel('Frequency')
+plt.legend()
+
+# 4.5 Balance Distribution by Churn
+plt.subplot(3, 4, 5)
+df[df[TARGET]==0]['Balance'].hist(alpha=0.5, label='Not Churned', bins=20, color='green')
+df[df[TARGET]==1]['Balance'].hist(alpha=0.5, label='Churned', bins=20, color='red')
+plt.title('Balance Distribution by Churn', fontsize=12, fontweight='bold')
+plt.xlabel('Balance')
+plt.ylabel('Frequency')
+plt.legend()
+
+# 4.6 Churn by Number of Products
+plt.subplot(3, 4, 6)
+churn_by_products = df.groupby('NumOfProducts')[TARGET].mean() * 100
+churn_by_products.plot(kind='bar', color='purple')
+plt.title('Churn Rate by Number of Products', fontsize=12, fontweight='bold')
+plt.xlabel('Number of Products')
+plt.ylabel('Churn Rate (%)')
+plt.xticks(rotation=0)
+
+# 4.7 Churn by Active Membership
+plt.subplot(3, 4, 7)
+churn_by_active = df.groupby('IsActiveMember')[TARGET].mean() * 100
+churn_by_active.plot(kind='bar', color='orange')
+plt.title('Churn Rate by Active Membership', fontsize=12, fontweight='bold')
+plt.xlabel('Is Active Member (0=No, 1=Yes)')
+plt.ylabel('Churn Rate (%)')
+plt.xticks(rotation=0)
+
+# 4.8 Churn by Tenure
+plt.subplot(3, 4, 8)
+churn_by_tenure = df.groupby('Tenure')[TARGET].mean() * 100
+churn_by_tenure.plot(kind='line', marker='o', color='teal')
+plt.title('Churn Rate by Tenure', fontsize=12, fontweight='bold')
+plt.xlabel('Tenure (years)')
+plt.ylabel('Churn Rate (%)')
+plt.grid(alpha=0.3)
+
+# 4.9 Credit Score by Churn
+plt.subplot(3, 4, 9)
+df.boxplot(column='CreditScore', by=TARGET, ax=plt.gca())
+plt.title('Credit Score by Churn Status', fontsize=12, fontweight='bold')
+plt.suptitle('')
+plt.xlabel('Exited (0=No, 1=Yes)')
+plt.ylabel('Credit Score')
+
+# 4.10 Age by Churn (Boxplot)
+plt.subplot(3, 4, 10)
+df.boxplot(column='Age', by=TARGET, ax=plt.gca())
+plt.title('Age by Churn Status', fontsize=12, fontweight='bold')
+plt.suptitle('')
+plt.xlabel('Exited (0=No, 1=Yes)')
+plt.ylabel('Age')
+
+# 4.11 Correlation Heatmap
+plt.subplot(3, 4, 11)
+numeric_cols = df.select_dtypes(include=[np.number]).columns
+corr_matrix = df[numeric_cols].corr()
+sns.heatmap(corr_matrix[['Exited']].sort_values(by='Exited', ascending=False), 
+            annot=True, cmap='coolwarm', center=0, ax=plt.gca())
+plt.title('Correlation with Churn', fontsize=12, fontweight='bold')
+
+# 4.12 Churn by Credit Card Ownership
+plt.subplot(3, 4, 12)
+churn_by_card = df.groupby('HasCrCard')[TARGET].mean() * 100
+churn_by_card.plot(kind='bar', color='pink')
+plt.title('Churn Rate by Credit Card Ownership', fontsize=12, fontweight='bold')
+plt.xlabel('Has Credit Card (0=No, 1=Yes)')
+plt.ylabel('Churn Rate (%)')
+plt.xticks(rotation=0)
+
+plt.tight_layout()
+plt.savefig('eda_comprehensive.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("✓ EDA visualizations saved as 'eda_comprehensive.png'")
+
+# ============================================================================
+# 5. FEATURE ENGINEERING
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("🔧 FEATURE ENGINEERING")
+print("=" * 70)
+
+# Create age groups
+df['AgeGroup'] = pd.cut(df['Age'], bins=[0, 30, 50, 100], labels=['Young', 'Middle', 'Senior'])
+
+# Create balance bins
+df['BalanceGroup'] = pd.cut(df['Balance'], bins=[-1, 0, 50000, 100000, 250000], 
+                              labels=['Zero', 'Low', 'Medium', 'High'])
+
+# Engagement score (composite feature)
+df['EngagementScore'] = (df['IsActiveMember'] * 2 + 
+                          df['HasCrCard'] + 
+                          df['NumOfProducts']) / 4
+
+# Tenure group
+df['TenureGroup'] = pd.cut(df['Tenure'], bins=[0, 2, 5, 10], labels=['New', 'Mid', 'Long'])
+
+# CLV Proxy (simplified)
+df['CLV_Proxy'] = df['Balance'] * df['Tenure'] * 0.0001  # Normalized
+
+print("✓ Created AgeGroup: Young/Middle/Senior")
+print("✓ Created BalanceGroup: Zero/Low/Medium/High")
+print("✓ Created EngagementScore: 0-1 scale")
+print("✓ Created TenureGroup: New/Mid/Long")
+print("✓ Created CLV_Proxy: Customer Lifetime Value estimate")
+
+# ============================================================================
+# 6. DATA PREPARATION FOR MODELING
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("🔨 PREPARING DATA FOR MODELING")
+print("=" * 70)
+
+# Define features (excluding newly engineered categorical features for simplicity)
+drop_cols = ["RowNumber", "CustomerId", "Surname", TARGET, 
+             "AgeGroup", "BalanceGroup", "TenureGroup"]  # Drop engineered categoricals
+feature_cols = [c for c in df.columns if c not in drop_cols]
+
+NUMERIC_FEATURES = [
+    "CreditScore", "Age", "Tenure", "Balance",
+    "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary",
+    "EngagementScore", "CLV_Proxy"  # Add engineered numeric features
+]
+CATEGORICAL_FEATURES = ["Geography", "Gender"]
+
+# Ensure all features exist
+NUMERIC_FEATURES = [c for c in NUMERIC_FEATURES if c in df.columns]
+CATEGORICAL_FEATURES = [c for c in CATEGORICAL_FEATURES if c in df.columns]
+
+print(f"📊 Numeric Features ({len(NUMERIC_FEATURES)}): {NUMERIC_FEATURES}")
+print(f"📊 Categorical Features ({len(CATEGORICAL_FEATURES)}): {CATEGORICAL_FEATURES}")
+
+# Prepare X and y
+X = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES].copy()
+y = df[TARGET].astype(int)
+
+# Train-test split with stratification
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"\n✓ Training set: {X_train.shape}")
+print(f"✓ Test set: {X_test.shape}")
+
+# ============================================================================
+# 7. BUILD PREPROCESSING PIPELINE
+# ============================================================================
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), NUMERIC_FEATURES),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CATEGORICAL_FEATURES),
+    ],
+    remainder="drop",
+)
+
+print("✓ Preprocessing pipeline created")
+
+# ============================================================================
+# 8. TRAIN MULTIPLE MODELS (Logistic Regression, Random Forest, XGBoost)
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("🤖 TRAINING CLASSIFICATION MODELS")
+print("=" * 70)
+
+# Define models
+models = {
+    "Logistic Regression": Pipeline([
+        ("pre", preprocessor),
+        ("clf", LogisticRegression(max_iter=500, class_weight="balanced", random_state=42)),
+    ]),
+    "Random Forest": Pipeline([
+        ("pre", preprocessor),
+        ("clf", RandomForestClassifier(
+            n_estimators=300, random_state=42, n_jobs=-1, 
+            class_weight="balanced", max_depth=15
+        )),
+    ]),
+    "XGBoost": Pipeline([
+        ("pre", preprocessor),
+        ("clf", XGBClassifier(
+            n_estimators=300, learning_rate=0.1, max_depth=6,
+            random_state=42, n_jobs=-1, eval_metric='logloss'
+        )),
+    ])
+}
+
+# Train and evaluate models
+results = {}
+best_name, best_model, best_auc = None, None, -1.0
+
+for name, model in models.items():
+    print(f"\n🔄 Training {name}...")
+    model.fit(X_train, y_train)
+    
+    # Predictions
+    y_pred_proba = model.predict_proba(X_test)[:, 1]
+    y_pred = (y_pred_proba >= 0.5).astype(int)
+    
+    # Metrics
+    auc_score = roc_auc_score(y_test, y_pred_proba)
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, zero_division=0)
+    recall = recall_score(y_test, y_pred, zero_division=0)
+    f1 = f1_score(y_test, y_pred, zero_division=0)
+    
+    results[name] = {
+        'model': model,
+        'auc': auc_score,
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'predictions_proba': y_pred_proba,
+        'predictions': y_pred
+    }
+    
+    if auc_score > best_auc:
+        best_name, best_model, best_auc = name, model, auc_score
+    
+    print(f"  ✓ AUC: {auc_score:.4f}")
+    print(f"  ✓ Accuracy: {accuracy:.4f}")
+    print(f"  ✓ Precision: {precision:.4f}")
+    print(f"  ✓ Recall: {recall:.4f}")
+    print(f"  ✓ F1-Score: {f1:.4f}")
+
+print("\n" + "=" * 70)
+print(f"🏆 BEST MODEL: {best_name} (AUC = {best_auc:.4f})")
+print("=" * 70)
+
+# ============================================================================
+# 9. MODEL COMPARISON VISUALIZATION
+# ============================================================================
+
+print("\n📊 Creating model comparison visualizations...")
+
+fig = plt.figure(figsize=(18, 10))
+
+# 9.1 AUC Comparison
+plt.subplot(2, 3, 1)
+auc_scores = {name: results[name]['auc'] for name in results}
+plt.bar(auc_scores.keys(), auc_scores.values(), color=['blue', 'green', 'orange'])
+plt.title('Model Comparison: AUC Score', fontsize=14, fontweight='bold')
+plt.ylabel('AUC Score')
+plt.ylim([0.7, 1.0])
+plt.xticks(rotation=15)
+for i, (name, score) in enumerate(auc_scores.items()):
+    plt.text(i, score + 0.01, f'{score:.4f}', ha='center', va='bottom', fontweight='bold')
+
+# 9.2 Accuracy Comparison
+plt.subplot(2, 3, 2)
+acc_scores = {name: results[name]['accuracy'] for name in results}
+plt.bar(acc_scores.keys(), acc_scores.values(), color=['blue', 'green', 'orange'])
+plt.title('Model Comparison: Accuracy', fontsize=14, fontweight='bold')
+plt.ylabel('Accuracy')
+plt.ylim([0.7, 1.0])
+plt.xticks(rotation=15)
+for i, (name, score) in enumerate(acc_scores.items()):
+    plt.text(i, score + 0.01, f'{score:.4f}', ha='center', va='bottom', fontweight='bold')
+
+# 9.3 F1-Score Comparison
+plt.subplot(2, 3, 3)
+f1_scores = {name: results[name]['f1'] for name in results}
+plt.bar(f1_scores.keys(), f1_scores.values(), color=['blue', 'green', 'orange'])
+plt.title('Model Comparison: F1-Score', fontsize=14, fontweight='bold')
+plt.ylabel('F1-Score')
+plt.ylim([0.3, 0.7])
+plt.xticks(rotation=15)
+for i, (name, score) in enumerate(f1_scores.items()):
+    plt.text(i, score + 0.01, f'{score:.4f}', ha='center', va='bottom', fontweight='bold')
+
+# 9.4 Confusion Matrix for Best Model
+plt.subplot(2, 3, 4)
+cm = confusion_matrix(y_test, results[best_name]['predictions'])
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False)
+plt.title(f'Confusion Matrix: {best_name}', fontsize=14, fontweight='bold')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+
+# 9.5 ROC Curves for All Models
+plt.subplot(2, 3, 5)
+for name in results:
+    fpr, tpr, _ = roc_curve(y_test, results[name]['predictions_proba'])
+    plt.plot(fpr, tpr, label=f"{name} (AUC={results[name]['auc']:.3f})")
+plt.plot([0, 1], [0, 1], 'k--', label='Random')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curves - All Models', fontsize=14, fontweight='bold')
+plt.legend(loc='lower right')
+plt.grid(alpha=0.3)
+
+# 9.6 Precision-Recall Curve for Best Model
+plt.subplot(2, 3, 6)
+precision, recall, _ = precision_recall_curve(y_test, results[best_name]['predictions_proba'])
+pr_auc = auc(recall, precision)
+plt.plot(recall, precision, marker='.', label=f'{best_name} (AUC={pr_auc:.3f})')
+plt.xlabel('Recall')
+plt.ylabel('Precision')
+plt.title(f'Precision-Recall Curve: {best_name}', fontsize=14, fontweight='bold')
+plt.legend()
+plt.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('model_comparison.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("✓ Model comparison saved as 'model_comparison.png'")
+
+# ============================================================================
+# 10. DETAILED EVALUATION OF BEST MODEL
+# ============================================================================
+
+print("\n" + "=" * 70)
+print(f"📈 DETAILED EVALUATION: {best_name}")
+print("=" * 70)
+
+best_proba = results[best_name]['predictions_proba']
+best_pred = results[best_name]['predictions']
+
+print("\n📊 CLASSIFICATION REPORT:")
+print(classification_report(y_test, best_pred, target_names=['Not Churned', 'Churned']))
+
+# Threshold Analysis
+print("\n🎯 THRESHOLD SENSITIVITY ANALYSIS:")
+print("-" * 60)
+print(f"{'Threshold':<12} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
+print("-" * 60)
+
+threshold_results = []
+for th in [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60]:
+    pred_at_th = (best_proba >= th).astype(int)
+    prec = precision_score(y_test, pred_at_th, zero_division=0)
+    rec = recall_score(y_test, pred_at_th, zero_division=0)
+    f1_th = f1_score(y_test, pred_at_th, zero_division=0)
+    threshold_results.append({'threshold': th, 'precision': prec, 'recall': rec, 'f1': f1_th})
+    print(f"{th:<12.2f} {prec:<12.3f} {rec:<12.3f} {f1_th:<12.3f}")
+
+# Find optimal threshold (maximizing F1)
+optimal_th = max(threshold_results, key=lambda x: x['f1'])
+print(f"\n🎯 Optimal Threshold (max F1): {optimal_th['threshold']:.2f}")
+print(f"   Precision: {optimal_th['precision']:.3f}")
+print(f"   Recall: {optimal_th['recall']:.3f}")
+print(f"   F1-Score: {optimal_th['f1']:.3f}")
+
+# ============================================================================
+# 11. FEATURE IMPORTANCE ANALYSIS
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("🔍 FEATURE IMPORTANCE ANALYSIS")
+print("=" * 70)
+
+# Extract feature names
+clf = best_model.named_steps["clf"]
+pre = best_model.named_steps["pre"]
+
+# Get feature names after preprocessing
+cat_names = pre.named_transformers_['cat'].get_feature_names_out(CATEGORICAL_FEATURES)
+all_feature_names = NUMERIC_FEATURES + list(cat_names)
+
+# Get feature importances
+if hasattr(clf, 'feature_importances_'):
+    importances = clf.feature_importances_
+elif hasattr(clf, 'coef_'):
+    importances = np.abs(clf.coef_[0])
+else:
+    importances = np.zeros(len(all_feature_names))
+
+# Create feature importance DataFrame
+feat_imp_df = pd.DataFrame({
+    'Feature': all_feature_names,
+    'Importance': importances
+}).sort_values('Importance', ascending=False)
+
+print("\n🏆 TOP 10 CHURN DRIVERS:")
+print(feat_imp_df.head(10).to_string(index=False))
+
+# Visualize feature importance
+plt.figure(figsize=(10, 8))
+feat_imp_df.head(15).sort_values('Importance').plot(
+    x='Feature', y='Importance', kind='barh', color='teal', legend=False
+)
+plt.title(f'Top 15 Churn Drivers - {best_name}', fontsize=14, fontweight='bold')
+plt.xlabel('Importance Score')
+plt.ylabel('Feature')
+plt.tight_layout()
+plt.savefig('feature_importance.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("\n✓ Feature importance saved as 'feature_importance.png'")
+
+# ============================================================================
+# 12. CHURN RISK SEGMENTATION
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("🎯 CUSTOMER RISK SEGMENTATION")
+print("=" * 70)
+
+# Add predictions to test set
+X_test_with_risk = X_test.copy()
+X_test_with_risk['ChurnProbability'] = best_proba
+X_test_with_risk['ActualChurn'] = y_test.values
+
+# Create risk segments
+X_test_with_risk['RiskSegment'] = pd.cut(
+    X_test_with_risk['ChurnProbability'],
+    bins=[0, 0.3, 0.7, 1.0],
+    labels=['Low Risk', 'Medium Risk', 'High Risk']
+)
+
+# Summary by risk segment
+risk_summary = X_test_with_risk.groupby('RiskSegment').agg({
+    'ActualChurn': ['count', 'sum', 'mean'],
+    'ChurnProbability': 'mean',
+    'Age': 'mean',
+    'Balance': 'mean',
+    'CreditScore': 'mean'
+}).round(2)
+
+print("\n📊 RISK SEGMENT SUMMARY:")
+print(risk_summary)
+
+# Visualize risk distribution
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+# Risk segment distribution
+axes[0].pie(
+    X_test_with_risk['RiskSegment'].value_counts(),
+    labels=X_test_with_risk['RiskSegment'].value_counts().index,
+    autopct='%1.1f%%',
+    colors=['green', 'yellow', 'red'],
+    startangle=90
+)
+axes[0].set_title('Customer Distribution by Risk Segment', fontsize=14, fontweight='bold')
+
+# Actual churn rate by risk segment
+risk_churn = X_test_with_risk.groupby('RiskSegment')['ActualChurn'].mean() * 100
+risk_churn.plot(kind='bar', ax=axes[1], color=['green', 'yellow', 'red'])
+axes[1].set_title('Actual Churn Rate by Risk Segment', fontsize=14, fontweight='bold')
+axes[1].set_ylabel('Churn Rate (%)')
+axes[1].set_xlabel('Risk Segment')
+axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=0)
+
+# Churn probability distribution
+axes[2].hist(X_test_with_risk['ChurnProbability'], bins=50, edgecolor='black')
+axes[2].axvline(0.3, color='green', linestyle='--', label='Low/Medium threshold')
+axes[2].axvline(0.7, color='red', linestyle='--', label='Medium/High threshold')
+axes[2].set_title('Distribution of Churn Probabilities', fontsize=14, fontweight='bold')
+axes[2].set_xlabel('Churn Probability')
+axes[2].set_ylabel('Number of Customers')
+axes[2].legend()
+
+plt.tight_layout()
+plt.savefig('risk_segmentation.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("\n✓ Risk segmentation saved as 'risk_segmentation.png'")
+
+# High-risk customer profile
+print("\n⚠️ HIGH-RISK CUSTOMER PROFILE:")
+high_risk = X_test_with_risk[X_test_with_risk['RiskSegment'] == 'High Risk']
+print(f"  • Total high-risk customers: {len(high_risk)}")
+print(f"  • Actual churn rate: {high_risk['ActualChurn'].mean()*100:.1f}%")
+print(f"  • Average age: {high_risk['Age'].mean():.1f} years")
+print(f"  • Average balance: ${high_risk['Balance'].mean():,.2f}")
+print(f"  • Average credit score: {high_risk['CreditScore'].mean():.0f}")
+
+# ============================================================================
+# 13. SAVE THE BEST MODEL
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("💾 SAVING MODEL")
+print("=" * 70)
+
+model_filename = f'best_churn_model_{best_name.replace(" ", "_").lower()}.pkl'
+joblib.dump(best_model, model_filename)
+print(f"✓ Model saved as '{model_filename}'")
+
+# Save feature names
+feature_info = {
+    'numeric_features': NUMERIC_FEATURES,
+    'categorical_features': CATEGORICAL_FEATURES,
+    'all_features': all_feature_names,
+    'best_model_name': best_name,
+    'best_auc': best_auc,
+    'optimal_threshold': optimal_th['threshold']
+}
+joblib.dump(feature_info, 'model_feature_info.pkl')
+print("✓ Feature information saved as 'model_feature_info.pkl'")
+
+# ============================================================================
+# 14. BUSINESS INSIGHTS AND RECOMMENDATIONS
+# ============================================================================
+
+print("\n" + "=" * 70)
+print("💼 BUSINESS INSIGHTS & RECOMMENDATIONS")
+print("=" * 70)
+
+print("""
+KEY FINDINGS:
+
+1. 📊 OVERALL CHURN RATE: 20.37%
+   - For every 100 customers, approximately 20 will churn
+   - Industry benchmark: 15-25% (within normal range)
+
+2. 🎯 TOP CHURN DRIVERS (from feature importance):""")
+
+for idx, row in feat_imp_df.head(5).iterrows():
+    print(f"   • {row['Feature']}: {row['Importance']:.3f}")
+
+print(f"""
+3. 🌍 GEOGRAPHIC INSIGHTS:
+   - Germany has the highest churn rate
+   - France and Spain show lower churn rates
+   - Consider localized retention strategies
+
+4. 👥 DEMOGRAPHIC PATTERNS:
+   - Age is a strong predictor of churn
+   - Older customers tend to churn more
+   - Gender shows some influence on churn behavior
+
+5. 💳 PRODUCT USAGE INSIGHTS:
+   - Customers with fewer products are at higher risk
+   - Inactive members are significantly more likely to churn
+   - Balance level correlates with churn probability
+
+6. ⚠️ HIGH-RISK SEGMENT:
+   - {len(high_risk)} customers identified as high-risk
+   - {high_risk['ActualChurn'].mean()*100:.1f}% of them actually churned
+   - Average churn probability: {high_risk['ChurnProbability'].mean()*100:.1f}%
+
+RECOMMENDED ACTIONS:
+
+1. 🎯 TARGETED RETENTION CAMPAIGNS:
+   - Focus on high-risk segment ({len(high_risk)} customers)
+   - Expected ROI: If we retain 50% of at-risk customers, potential revenue saved
+
+2. 📞 PROACTIVE OUTREACH:
+   - Contact customers with churn probability > 70%
+   - Offer personalized incentives (product bundles, fee waivers)
+   - Implement early warning system
+
+3. 🛠️ PRODUCT STRATEGY:
+   - Encourage multi-product adoption
+   - Simplify product offerings for certain segments
+   - Create product bundles for high-value customers
+
+4. 📱 ENGAGEMENT INITIATIVES:
+   - Re-activate inactive members through targeted campaigns
+   - Develop digital engagement strategies
+   - Implement gamification for younger demographics
+
+5. 🌍 GEOGRAPHIC STRATEGIES:
+   - Investigate root causes in Germany (highest churn)
+   - Replicate successful retention practices from France/Spain
+   - Localize customer experience
+
+6. 💰 FINANCIAL IMPACT ESTIMATE:
+   - Avg customer lifetime value (CLV) proxy: ${df['CLV_Proxy'].mean():.2f}
+   - Potential revenue at risk (high-risk segment): ${(len(high_risk) * df['CLV_Proxy'].mean() * high_risk['ChurnProbability'].mean()):.2f}
+   - Target: Reduce churn by 30% → Estimated savings
+
+NEXT STEPS:
+
+1. ✅ Deploy model in production environment
+2. ✅ Set up automated daily scoring of customer base
+3. ✅ Integrate with CRM for targeted campaigns
+4. ✅ A/B test retention strategies on high-risk segment
+5. ✅ Monitor model performance and retrain quarterly
+6. ✅ Develop customer health score dashboard for stakeholders
+""")
+
+print("=" * 70)
+print("✅ ANALYSIS COMPLETE!")
+print("=" * 70)
+
+print("""
+📁 OUTPUT FILES GENERATED:
+1. eda_comprehensive.png - Exploratory data analysis visualizations
+2. model_comparison.png - Model performance comparison
+3. feature_importance.png - Top churn drivers
+4. risk_segmentation.png - Customer risk distribution
+5. best_churn_model_*.pkl - Trained model for deployment
+6. model_feature_info.pkl - Feature metadata
+
+📊 Next: Create a dashboard or PDF report with these visualizations!
+""")
+
+# ============================================================================
+# BONUS: SAMPLE PREDICTION FUNCTION
+# ============================================================================
+
+def predict_churn(customer_data, model=best_model, threshold=optimal_th['threshold']):
+    """
+    Predict churn for new customers
+    
+    Parameters:
+    -----------
+    customer_data : dict or pd.DataFrame
+        Customer features
+    model : trained model
+        The trained churn prediction model
+    threshold : float
+        Probability threshold for classification
+        
+    Returns:
+    --------
+    dict : Prediction results
+    """
+    if isinstance(customer_data, dict):
+        customer_data = pd.DataFrame([customer_data])
+    
+    # Ensure all required features are present
+    for feature in NUMERIC_FEATURES + CATEGORICAL_FEATURES:
+        if feature not in customer_data.columns:
+            raise ValueError(f"Missing required feature: {feature}")
+    
+    # Predict
+    proba = model.predict_proba(customer_data[NUMERIC_FEATURES + CATEGORICAL_FEATURES])[:, 1]
+    prediction = (proba >= threshold).astype(int)
+    
+    # Risk segment
+    if proba[0] < 0.3:
+        risk = 'Low Risk'
+    elif proba[0] < 0.7:
+        risk = 'Medium Risk'
+    else:
+        risk = 'High Risk'
+    
+    return {
+        'churn_probability': float(proba[0]),
+        'will_churn': bool(prediction[0]),
+        'risk_segment': risk,
+        'threshold_used': threshold
+    }
+
+print("\n✅ Prediction function 'predict_churn()' is ready to use!")
+print("\nExample usage:")
+print("result = predict_churn({'CreditScore': 650, 'Age': 45, ...})")
