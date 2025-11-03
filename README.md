@@ -1,4 +1,4 @@
-# FUTURE_ML_02 — AI-Powered Sales Forecasting Dashboard
+# FUTURE_ML_02 — Churn Prediction System
 
 ## 🎯 Project Overview
 This repository contains **Task 2** of my **Machine Learning Internship** with *Future Interns*.  
