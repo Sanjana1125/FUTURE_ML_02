@@ -1,8 +1,9 @@
-# FUTURE_ML_01 — AI-Powered Sales Forecasting Dashboard
+# FUTURE_ML_02 — AI-Powered Sales Forecasting Dashboard
 
 ## 🎯 Project Overview
-This repository contains **Task 1** of my **Machine Learning Internship** with *Future Interns*.  
-I developed an **AI-powered sales forecasting model** using **Facebook Prophet** to predict future sales trends based on historical data.
+This repository contains **Task 2** of my **Machine Learning Internship** with *Future Interns*.  
+I developed an **Customer Churn Prediction Model** to predict which costumers are likely to leave a service.
+
 
 ### 1. **Documentation** 📄
 - `FINAL_SUMMARY.md` - Complete project overview
